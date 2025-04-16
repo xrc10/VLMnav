@@ -1,0 +1,47 @@
+[
+    {
+        "action_number": 0,
+        "boundary_point": null,
+        "center_position": [
+            30,
+            30
+        ],
+        "turning_degree": 180.0
+    },
+    {
+        "action_number": 1,
+        "boundary_point": [
+            110,
+            669
+        ],
+        "center_position": [
+            178,
+            694
+        ],
+        "turning_degree": -69.8
+    },
+    {
+        "action_number": 2,
+        "boundary_point": [
+            320,
+            305
+        ],
+        "center_position": [
+            438,
+            512
+        ],
+        "turning_degree": -29.8
+    },
+    {
+        "action_number": 3,
+        "boundary_point": [
+            740,
+            311
+        ],
+        "center_position": [
+            703,
+            515
+        ],
+        "turning_degree": 10.3
+    }
+]
