@@ -8,7 +8,7 @@ import time
 import json
 import numpy as np
 import cv2
-
+from tqdm import tqdm
 """
 Action Proposal API
 
@@ -34,15 +34,14 @@ Output:
 """
 
 def test_action_proposal_api(
-    api_url="http://10.8.25.28:8075/generate_action_proposals",
+    api_url="http://10.8.25.28:8077/generate_action_proposals",
     image_pattern=".MVIMG_*",
-    output_dir="./output/",
+    output_dir="./output_video/",
     min_angle=40,
     number_size=30,
     min_path_length=200,
     min_arrow_width=15,
-    use_turn_left_right=False,
-    use_turn_around=False
+    use_turn_left_right=False
 ):
     """
     Test the action proposal API by sending local images and saving the results.
@@ -56,20 +55,26 @@ def test_action_proposal_api(
         min_path_length: Minimum path length for proposals
         min_arrow_width: Minimum arrow width for proposals
         use_turn_left_right: Whether to use turn left right for proposals
-        use_turn_around: Whether to use turn around for proposals
     """
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     
     # Find all matching image files
-    image_files = glob.glob(image_pattern)
+    image_files = sorted(glob.glob(image_pattern))
     print(f"Found {len(image_files)} images matching pattern '{image_pattern}'")
     
     if not image_files:
         print("No images found. Please check the pattern.")
         return
     
-    for image_path in image_files:
+    # Initialize video writer
+    first_image = cv2.imread(image_files[0])
+    height, width = first_image.shape[:2]
+    video_path = os.path.join(output_dir, "output_video.mp4")
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(video_path, fourcc, 2.0, (width, height))
+    
+    for image_path in tqdm(image_files):
         # Get filename without path
         filename = os.path.basename(image_path)
         output_image_path = os.path.join(output_dir, filename)
@@ -95,15 +100,12 @@ def test_action_proposal_api(
                 "number_size": number_size,
                 "min_path_length": min_path_length,
                 "min_arrow_width": min_arrow_width,
+                "use_turn_left_right": use_turn_left_right
             }
             
             # Send request to API
             response = requests.post(api_url, json=payload, timeout=60)
             
-            print(response.json().keys()) # dict_keys(['actions', 'image'])
-            # actions [{'action_number': 0, 'turning_degree': 180.0}, {'action_number': 1, 'turning_degree': -56.9}, {'action_number': 2, 'turning_degree': -16.8}, {'action_number': 3, 'turning_degree': 23.3}, {'action_number': 4, 'turning_degree': 69.8}]
-            # image is base64 encoded image in string
-
             if response.status_code == 200:
                 # Get response data
                 data = response.json()
@@ -133,6 +135,11 @@ def test_action_proposal_api(
                 print(f"✓ Saved actions to {output_json_path}")
 
                 print(f"  Actions: {actions}")
+                
+                # Add frame to video
+                frame = cv2.imread(output_image_path)
+                video_writer.write(frame)
+                
             else:
                 print(f"✗ Error: API returned status code {response.status_code}")
                 print(f"  Response: {response.text}")
@@ -140,42 +147,37 @@ def test_action_proposal_api(
         except Exception as e:
             print(f"✗ Error processing {filename}: {str(e)}")
     
+    # Release video writer
+    video_writer.release()
+    print(f"✓ Video saved to {video_path}")
     print("Processing complete!")
 
 if __name__ == "__main__":
     # You can customize these parameters if needed
-    API_URL = "http://10.8.25.28:8075/generate_action_proposals"
-    # IMAGE_PATTERN = "./MVIMG_*"  # Pattern to match input images
-    # IMAGE_PATTERN = "/data3/xu_ruochen/vlm_od_logs/*.jpg"
-    IMAGE_PATTERN = "./ut_dog_depth_camera_rgb*.jpg"
-    # IMAGE_PATTERN = "./ZED3_KSC_047355_L_P009301_png.rf.3557e43e49c61b09fdf2c479938de37e.jpg"
-    # IMAGE_PATTERN = "./ZED3_KSC_047510_L_P009418_png.rf.30e99c2376bc8709863c1556be68e61c.jpg"
-    OUTPUT_DIR = "./output/"
-    MIN_ANGLE = 20
+    API_URL = "http://10.8.25.28:8077/generate_action_proposals"
+    IMAGE_PATTERN = "/data23/xu_ruochen/preprocessdatawithmllm/data/sidewalk_yolo/train/*.jpg"
+    OUTPUT_DIR = "./output_video/"
+    MIN_ANGLE = 10
     NUMBER_SIZE = 20
-    MIN_PATH_LENGTH = 50
-    MIN_ARROW_WIDTH = 15
+    MIN_PATH_LENGTH = 80
+    MIN_ARROW_WIDTH = 5
 
     # clean output folder
     if os.path.exists(OUTPUT_DIR):
         for file in os.listdir(OUTPUT_DIR):
             os.remove(os.path.join(OUTPUT_DIR, file))
     
-    #iterate all images in the current directory
-    for image_path in glob.glob(IMAGE_PATTERN):
-        print(f"Processing {image_path}...")
-        start_time = time.time()
-        test_action_proposal_api(
-            api_url=API_URL,
-            image_pattern=image_path,
-            output_dir=OUTPUT_DIR,
-            min_angle=MIN_ANGLE,
-            number_size=NUMBER_SIZE,
-            min_path_length=MIN_PATH_LENGTH,
-            min_arrow_width=MIN_ARROW_WIDTH,
-            use_turn_left_right=False,
-            use_turn_around=False
-        ) 
-        end_time = time.time()
-        print(f"Time taken: {end_time - start_time} seconds")
-        break
+    # Process all images and create video
+    start_time = time.time()
+    test_action_proposal_api(
+        api_url=API_URL,
+        image_pattern=IMAGE_PATTERN,
+        output_dir=OUTPUT_DIR,
+        min_angle=MIN_ANGLE,
+        number_size=NUMBER_SIZE,
+        min_path_length=MIN_PATH_LENGTH,
+        min_arrow_width=MIN_ARROW_WIDTH,
+        use_turn_left_right=True
+    ) 
+    end_time = time.time()
+    print(f"Total time taken: {end_time - start_time} seconds")

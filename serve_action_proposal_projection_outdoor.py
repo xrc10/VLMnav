@@ -57,15 +57,17 @@ def load_model(model_path):
     
     return model.config.id2label
 
-def generate_action_proposals_from_image(image_data, min_angle=15, number_size=15, min_path_length=50, draw_degree=False, min_arrow_width=10, use_turn_left_right=False, use_turn_around=True):
+def generate_action_proposals_from_image(image_data, min_angle=15, number_size=15, min_path_length=50, draw_degree=False, min_arrow_width=10, use_turn_left_right=False):
     """Process an image and generate action proposals."""
     global device, processor, model
     
     # Get class ids for navigable regions
     id2label = model.config.id2label
     # print(f"id2label: {id2label}")
+    # {0: 'wall', 1: 'building', 2: 'sky', 3: 'floor', 4: 'tree', 5: 'ceiling', 6: 'road', 7: 'bed ', 8: 'windowpane', 9: 'grass', 10: 'cabinet', 11: 'sidewalk', 12: 'person', 13: 'earth', 14: 'door', 15: 'table', 16: 'mountain', 17: 'plant', 18: 'curtain', 19: 'chair', 20: 'car', 21: 'water', 22: 'painting', 23: 'sofa', 24: 'shelf', 25: 'house', 26: 'sea', 27: 'mirror', 28: 'rug', 29: 'field', 30: 'armchair', 31: 'seat', 32: 'fence', 33: 'desk', 34: 'rock', 35: 'wardrobe', 36: 'lamp', 37: 'bathtub', 38: 'railing', 39: 'cushion', 40: 'base', 41: 'box', 42: 'column', 43: 'signboard', 44: 'chest of drawers', 45: 'counter', 46: 'sand', 47: 'sink', 48: 'skyscraper', 49: 'fireplace', 50: 'refrigerator', 51: 'grandstand', 52: 'path', 53: 'stairs', 54: 'runway', 55: 'case', 56: 'pool table', 57: 'pillow', 58: 'screen door', 59: 'stairway', 60: 'river', 61: 'bridge', 62: 'bookcase', 63: 'blind', 64: 'coffee table', 65: 'toilet', 66: 'flower', 67: 'book', 68: 'hill', 69: 'bench', 70: 'countertop', 71: 'stove', 72: 'palm', 73: 'kitchen island', 74: 'computer', 75: 'swivel chair', 76: 'boat', 77: 'bar', 78: 'arcade machine', 79: 'hovel', 80: 'bus', 81: 'towel', 82: 'light', 83: 'truck', 84: 'tower', 85: 'chandelier', 86: 'awning', 87: 'streetlight', 88: 'booth', 89: 'television receiver', 90: 'airplane', 91: 'dirt track', 92: 'apparel', 93: 'pole', 94: 'land', 95: 'bannister', 96: 'escalator', 97: 'ottoman', 98: 'bottle', 99: 'buffet', 100: 'poster', 101: 'stage', 102: 'van', 103: 'ship', 104: 'fountain', 105: 'conveyer belt', 106: 'canopy', 107: 'washer', 108: 'plaything', 109: 'swimming pool', 110: 'stool', 111: 'barrel', 112: 'basket', 113: 'waterfall', 114: 'tent', 115: 'bag', 116: 'minibike', 117: 'cradle', 118: 'oven', 119: 'ball', 120: 'food', 121: 'step', 122: 'tank', 123: 'trade name', 124: 'microwave', 125: 'pot', 126: 'animal', 127: 'bicycle', 128: 'lake', 129: 'dishwasher', 130: 'screen', 131: 'blanket', 132: 'sculpture', 133: 'hood', 134: 'sconce', 135: 'vase', 136: 'traffic light', 137: 'tray', 138: 'ashcan', 139: 'fan', 140: 'pier', 141: 'crt screen', 142: 'plate', 143: 'monitor', 144: 'bulletin board', 145: 'shower', 146: 'radiator', 147: 'glass', 148: 'clock', 149: 'flag'}
+    outdoor_labels = ["floor", "rug", "road", "sidewalk", "earth", "field", "sand", "dirt track", "land"]
     navigability_class_ids = [id for id, label in id2label.items() 
-                            if 'floor' in label.lower() or 'rug' in label.lower()]
+                            if label in outdoor_labels]
     
     # Process the image
     inputs = processor(images=image_data, return_tensors="pt").to(device)
@@ -101,13 +103,12 @@ def generate_action_proposals_from_image(image_data, min_angle=15, number_size=1
                                        min_path_length=min_path_length,
                                        draw_degree=draw_degree,
                                        min_arrow_width=min_arrow_width,
-                                       use_turn_left_right=use_turn_left_right,
-                                       use_turn_around=use_turn_around)
+                                       use_turn_left_right=use_turn_left_right)
     
     return output_image, action_info, navigability_mask
 
 @app.route('/generate_action_proposals', methods=['POST'])
-@limiter.limit("2000 per minute")
+@limiter.limit("200 per minute")
 def process_image():
     """API endpoint to process images and generate action proposals."""
     try:
@@ -124,7 +125,7 @@ def process_image():
         save_image = data.get('save_image', False)
         min_arrow_width = data.get('min_arrow_width', 10)
         use_turn_left_right = data.get('use_turn_left_right', False)
-        use_turn_around = data.get('use_turn_around', True)
+        
         # Decode base64 image
         try:
             image_bytes = base64.b64decode(data['image'])
@@ -140,8 +141,7 @@ def process_image():
             min_path_length=min_path_length,
             draw_degree=draw_degree,
             min_arrow_width=min_arrow_width,
-            use_turn_left_right=use_turn_left_right,
-            use_turn_around=use_turn_around
+            use_turn_left_right=use_turn_left_right
         )
         
         # if save_image is True, save the image

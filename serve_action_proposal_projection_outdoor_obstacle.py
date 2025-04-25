@@ -13,7 +13,7 @@ import cv2
 from PIL import Image
 from transformers import AutoImageProcessor, Mask2FormerForUniversalSegmentation
 import matplotlib.pyplot as plt
-from add_action_proposal_projection_fixed import (
+from add_action_proposal_projection_obstacle import (
     find_boundary_points,
     filter_points_by_angle,
     draw_action_proposals,
@@ -57,15 +57,15 @@ def load_model(model_path):
     
     return model.config.id2label
 
-def generate_action_proposals_from_image(image_data, min_angle=15, number_size=15, min_path_length=50, draw_degree=False, min_arrow_width=10, use_turn_left_right=False, use_turn_around=True):
+def generate_action_proposals_from_image(image_data, min_angle=15, number_size=15, min_path_length=50, draw_degree=False, min_arrow_width=10):
     """Process an image and generate action proposals."""
     global device, processor, model
     
     # Get class ids for navigable regions
     id2label = model.config.id2label
-    # print(f"id2label: {id2label}")
+    outdoor_labels = ["floor", "rug", "road", "sidewalk", "earth", "field", "sand", "dirt track", "land", "path"]
     navigability_class_ids = [id for id, label in id2label.items() 
-                            if 'floor' in label.lower() or 'rug' in label.lower()]
+                            if label in outdoor_labels]
     
     # Process the image
     inputs = processor(images=image_data, return_tensors="pt").to(device)
@@ -101,13 +101,98 @@ def generate_action_proposals_from_image(image_data, min_angle=15, number_size=1
                                        min_path_length=min_path_length,
                                        draw_degree=draw_degree,
                                        min_arrow_width=min_arrow_width,
-                                       use_turn_left_right=use_turn_left_right,
-                                       use_turn_around=use_turn_around)
+                                       use_turn_left_right=False,
+                                       use_turn_around=False)
     
-    return output_image, action_info, navigability_mask
+    # Find obstacle regions and their labels
+    obstacle_info = []
+    blocked_actions = []
+    
+    # Get all possible angles in the FOV
+    fov = 90  # degrees
+    all_angles = np.linspace(-fov/2, fov/2, int(fov/min_angle) + 1)
+    
+    # For each angle, check if there's an action proposal
+    for angle in all_angles:
+        has_action = False
+        for action in action_info:
+            if abs(action['turning_degree'] - angle) < min_angle/2:
+                has_action = True
+                break
+        
+        if not has_action:
+            # This direction has no action proposal, indicating an obstacle
+            # Find the obstacle region in this direction
+            theta_rad = np.deg2rad(angle)
+            end_x = int(start_point[0] + width * np.sin(theta_rad))
+            end_y = int(start_point[1] - width * np.cos(theta_rad))
+            
+            # Sample points along this direction to find the obstacle
+            num_samples = 20
+            obstacle_found = False
+            obstacle_position = None
+            
+            for t in np.linspace(0, 1, num_samples):
+                x = int(start_point[0] + t * (end_x - start_point[0]))
+                y = int(start_point[1] + t * (end_y - start_point[1]))
+                
+                if 0 <= x < width and 0 <= y < height:
+                    if not navigability_mask[y, x]:
+                        # Found an obstacle, get its label
+                        obstacle_label_id = predicted_semantic_map[y, x]
+                        obstacle_label = id2label.get(obstacle_label_id, "unknown")
+                        obstacle_position = (x, y)
+                        
+                        # Add to obstacle info
+                        obstacle_info.append({
+                            'angle': angle,
+                            'label': obstacle_label,
+                            'position': obstacle_position
+                        })
+                        
+                        # Add blocked action
+                        blocked_actions.append({
+                            'turning_degree': angle,
+                            'is_blocked': True,
+                            'blocked_by': obstacle_label,
+                            'position': obstacle_position,
+                            'path_length': int(t * width)  # Approximate path length to obstacle
+                        })
+                        
+                        obstacle_found = True
+                        break
+            
+            if not obstacle_found:
+                # If no obstacle found but still no action, add a blocked action with unknown obstacle
+                blocked_actions.append({
+                    'turning_degree': angle,
+                    'is_blocked': True,
+                    'blocked_by': "unknown",
+                    'position': None,
+                    'path_length': width  # Use full width as path length
+                })
+            
+            # Draw blocked path in red
+            if obstacle_position:
+                # Draw the path from start point to obstacle
+                cv2.line(output_image, start_point, obstacle_position, (255, 0, 0), 2)
+                # Draw a red circle around the obstacle
+                cv2.circle(output_image, obstacle_position, 10, (255, 0, 0), 2)
+                # Add obstacle label
+                cv2.putText(output_image, obstacle_label, 
+                           (obstacle_position[0] + 15, obstacle_position[1]), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+            else:
+                # If no specific obstacle found, draw the path to the edge of the image
+                cv2.line(output_image, start_point, (end_x, end_y), (255, 0, 0), 2)
+    
+    # Combine regular actions and blocked actions
+    all_actions = action_info + blocked_actions
+    
+    return output_image, all_actions, navigability_mask, obstacle_info
 
 @app.route('/generate_action_proposals', methods=['POST'])
-@limiter.limit("2000 per minute")
+@limiter.limit("200 per minute")
 def process_image():
     """API endpoint to process images and generate action proposals."""
     try:
@@ -123,8 +208,7 @@ def process_image():
         draw_degree = data.get('draw_degree', False)
         save_image = data.get('save_image', False)
         min_arrow_width = data.get('min_arrow_width', 10)
-        use_turn_left_right = data.get('use_turn_left_right', False)
-        use_turn_around = data.get('use_turn_around', True)
+        
         # Decode base64 image
         try:
             image_bytes = base64.b64decode(data['image'])
@@ -133,15 +217,13 @@ def process_image():
             return jsonify({'error': f'Invalid image data: {str(e)}'}), 400
         
         # Process the image
-        output_image, action_info, navigability_mask = generate_action_proposals_from_image(
+        output_image, action_info, navigability_mask, obstacle_info = generate_action_proposals_from_image(
             image, 
             min_angle=min_angle, 
             number_size=number_size,
             min_path_length=min_path_length,
             draw_degree=draw_degree,
-            min_arrow_width=min_arrow_width,
-            use_turn_left_right=use_turn_left_right,
-            use_turn_around=use_turn_around
+            min_arrow_width=min_arrow_width
         )
         
         # if save_image is True, save the image
@@ -156,10 +238,14 @@ def process_image():
             image_path = os.path.join(IMAGE_DIR, f"{timestamp}.jpg")
             cv2.imwrite(image_path, cv2.cvtColor(output_image, cv2.COLOR_RGB2BGR))
 
-            # save the action info
-            action_info_path = os.path.join(IMAGE_DIR, f"logs.json")
-            with open(action_info_path, 'a') as f:
-                f.write(json.dumps(action_info) + '\n')
+            # save the action info and obstacle info
+            info_path = os.path.join(IMAGE_DIR, f"logs.json")
+            with open(info_path, 'a') as f:
+                f.write(json.dumps({
+                    'action_info': action_info,
+                    'obstacle_info': obstacle_info,
+                    'timestamp': timestamp
+                }) + '\n')
 
         # Convert output image to base64
         _, buffer = cv2.imencode('.jpg', cv2.cvtColor(output_image, cv2.COLOR_RGB2BGR))
@@ -170,7 +256,8 @@ def process_image():
             'navigability_mask': navigability_mask.tolist(),
             'navigability_mask_shape': navigability_mask.shape,
             'navigability_mask_dtype': str(navigability_mask.dtype),
-            'actions': action_info
+            'actions': action_info,
+            'obstacles': obstacle_info
         })
         
     except Exception as e:

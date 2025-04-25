@@ -1,7 +1,31 @@
+# IDE and system files
 .idea/
 __pycache__/
+.vscode/
+
+# Data and logs
 data/
 logs/
-.vscode/
 wandb/
 src/VLMnav.egg-info/
+
+# Output folders
+output*/
+output_video/
+*output*/
+**/output*/
+**/output_video/
+
+# Image files
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.bmp
+*.tiff
+*.svg
+*.ico
+*.heic
+*.heif
+*.raw

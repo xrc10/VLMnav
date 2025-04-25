@@ -144,12 +144,12 @@ def test_action_proposal_api(
 
 if __name__ == "__main__":
     # You can customize these parameters if needed
-    API_URL = "http://10.8.25.28:8075/generate_action_proposals"
+    API_URL = "http://10.8.25.28:8077/generate_action_proposals"
     # IMAGE_PATTERN = "./MVIMG_*"  # Pattern to match input images
     # IMAGE_PATTERN = "/data3/xu_ruochen/vlm_od_logs/*.jpg"
-    IMAGE_PATTERN = "./ut_dog_depth_camera_rgb*.jpg"
+    # IMAGE_PATTERN = "./ut_dog_depth_camera_rgb*.jpg"
     # IMAGE_PATTERN = "./ZED3_KSC_047355_L_P009301_png.rf.3557e43e49c61b09fdf2c479938de37e.jpg"
-    # IMAGE_PATTERN = "./ZED3_KSC_047510_L_P009418_png.rf.30e99c2376bc8709863c1556be68e61c.jpg"
+    IMAGE_PATTERN = "./ZED3_KSC_047510_L_P009418_png.rf.30e99c2376bc8709863c1556be68e61c.jpg"
     OUTPUT_DIR = "./output/"
     MIN_ANGLE = 20
     NUMBER_SIZE = 20

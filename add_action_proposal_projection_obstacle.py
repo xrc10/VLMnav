@@ -273,15 +273,20 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
         # Determine if the path is blocked (shorter than adjusted minimum length)
         is_blocked = path_length < adjusted_min_path_length
         
+        # Skip this path if it's too short and raise a warning
+        if is_blocked:
+            print(f"Warning: Action proposal at angle {turning_degree:.1f}° is blocked (length: {path_length:.1f} < {adjusted_min_path_length:.1f})")
+            continue
+            
         # Draw arrow with appropriate color (green for navigable, red for blocked)
-        arrow_color = (255, 0, 0)  # Red in BGR format (B=0, G=0, R=255)
+        arrow_color = (0, 255, 0) if not is_blocked else (0, 0, 255)  # Green for navigable, red for blocked
         
         cv2.arrowedLine(
             output_image, 
             entry_point,
             end_point,
-            arrow_color,  # Use red color
-            4,  # Line thickness
+            arrow_color,  # Use color based on navigability
+            2,  # Line thickness
             tipLength=0.03
         )
         
@@ -454,7 +459,7 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
                  (degree_text_x, degree_text_y),
                  cv2.FONT_HERSHEY_SIMPLEX,
                  0.5,
-                 (0, 0, 255) if is_blocked else (0, 255, 0),  # Red for blocked, green for navigable
+                 (255, 0, 0) if is_blocked else (0, 255, 0),  # Red for blocked, green for navigable
                  1 # Thinner line for degree text
              )
 
