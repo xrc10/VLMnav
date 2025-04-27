@@ -63,7 +63,6 @@ def generate_action_proposals_from_image(image_data, min_angle=15, number_size=1
     
     # Get class ids for navigable regions
     id2label = model.config.id2label
-    # print(f"id2label: {id2label}")
     navigability_class_ids = [id for id, label in id2label.items() 
                             if 'floor' in label.lower() or 'rug' in label.lower()]
     
@@ -95,14 +94,16 @@ def generate_action_proposals_from_image(image_data, min_angle=15, number_size=1
     filtered_points = filter_points_by_angle(boundary_points, start_point, min_angle=min_angle)
     
     # Create action visualization image and get the final filtered/numbered action info
-    output_image, action_info = draw_action_proposals(img_np, filtered_points, start_point, 
-                                       number_size=number_size, 
-                                       navigability_mask=navigability_mask,
-                                       min_path_length=min_path_length,
-                                       draw_degree=draw_degree,
-                                       min_arrow_width=min_arrow_width,
-                                       use_turn_left_right=use_turn_left_right,
-                                       use_turn_around=use_turn_around)
+    output_image, action_info = draw_action_proposals(
+        img_np, filtered_points, start_point, 
+        number_size=number_size, 
+        navigability_mask=navigability_mask,
+        min_path_length=min_path_length,
+        draw_degree=draw_degree,
+        min_arrow_width=min_arrow_width,
+        use_turn_left_right=use_turn_left_right,
+        use_turn_around=use_turn_around
+    )
     
     return output_image, action_info, navigability_mask
 
@@ -125,6 +126,11 @@ def process_image():
         min_arrow_width = data.get('min_arrow_width', 10)
         use_turn_left_right = data.get('use_turn_left_right', False)
         use_turn_around = data.get('use_turn_around', True)
+
+        # Validate turn options
+        if use_turn_left_right and use_turn_around:
+            return jsonify({'error': 'Cannot use both turn_left_right and turn_around at the same time'}), 400
+
         # Decode base64 image
         try:
             image_bytes = base64.b64decode(data['image'])
@@ -193,7 +199,12 @@ def save_result():
             return jsonify({'error': 'VLM output is required'}), 400
         if 'action_number' not in data:
             return jsonify({'error': 'Action number is required'}), 400
-            
+        
+        # Validate action number
+        action_number = data['action_number']
+        if not isinstance(action_number, (int, float)):
+            return jsonify({'error': 'Action number must be a number'}), 400
+        
         # Ensure the log directory exists
         ensure_directory_exists(LOG_DIR)
         
@@ -214,7 +225,7 @@ def save_result():
             'timestamp': timestamp,
             'image_path': image_path,
             'vlm_output': data['vlm_output'],
-            'action_number': data['action_number'],
+            'action_number': action_number,
         }
         
         # Add optional fields if present

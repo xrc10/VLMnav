@@ -133,131 +133,22 @@ def filter_points_by_angle(points, start_point, min_angle=15):
 
 def draw_action_proposals(image, boundary_points, start_point, number_size=15, navigability_mask=None, min_path_length=50, draw_degree=True, min_arrow_width=10, use_turn_left_right=False, use_turn_around=True):
     """Draw action proposals on the image and return the corresponding action info."""
-    if use_turn_left_right and use_turn_around:
-        raise ValueError("Cannot use both turn_left_right and turn_around at the same time")
-
     # Create a copy of the original image
     output_image = image.copy()
     height, width = image.shape[:2]
     
-    # Define the circle radius for turn options
+    # Define the "turn around" option position first (needed for action_number 0)
     turn_point_radius = number_size
+    # Position closer to the corner, ensuring space for text
+    turn_point_center_x = turn_point_radius + 10 
+    turn_point_center_y = turn_point_radius + 10
+    turn_point = (turn_point_center_x, turn_point_center_y)
     
-    # Initialize the final action list
-    final_actions = []
-    action_number = 1  # Start from 1 for normal actions
-
-    # Handle turn around and left/right options
-    if use_turn_around:
-        # Position closer to the corner, ensuring space for text
-        turn_point_center_x = turn_point_radius + 10 
-        turn_point_center_y = turn_point_radius + 10
-        turn_point = (turn_point_center_x, turn_point_center_y)
-        
-        # Draw the "turn around" option (action 0) representation at top left corner
-        cv2.circle(output_image, turn_point, turn_point_radius, (255, 255, 255), -1)  # White background circle
-
-        # Center the "0" text within the circle
-        text_0 = "0"
-        text_0_size, _ = cv2.getTextSize(text_0, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-        text_0_x = turn_point_center_x - text_0_size[0] // 2
-        text_0_y = turn_point_center_y + text_0_size[1] // 2
-        cv2.putText(
-            output_image,
-            text_0,
-            (text_0_x, text_0_y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 0, 0), # Black text
-            2
-        )
-
-        # Add descriptive text next to the "0" circle
-        if draw_degree:
-            turn_around_text = "turn around (180deg)"
-        else:
-            turn_around_text = "turn around"
-
-        text_ta_x = turn_point_center_x + turn_point_radius + 5
-        text_ta_y = turn_point_center_y + text_0_size[1] // 2
-
-        cv2.putText(
-            output_image,
-            turn_around_text,
-            (text_ta_x, text_ta_y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (255, 0, 0),
-            2
-        )
-
-        # Add "turn around" action
-        final_actions.append({
-            'action_number': 0,
-            'turning_degree': 180.0,
-            'center_position': (turn_point_center_x, turn_point_center_y),
-            'boundary_point': None
-        })
-
-    elif use_turn_left_right:
-        # Draw "L" in top left corner
-        left_center_x = turn_point_radius + 10
-        left_center_y = turn_point_radius + 10
-        left_point = (left_center_x, left_center_y)
-        
-        cv2.circle(output_image, left_point, turn_point_radius, (255, 255, 255), -1)
-        text_L = "L"
-        text_L_size, _ = cv2.getTextSize(text_L, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-        text_L_x = left_center_x - text_L_size[0] // 2
-        text_L_y = left_center_y + text_L_size[1] // 2
-        cv2.putText(
-            output_image,
-            text_L,
-            (text_L_x, text_L_y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 0, 0),
-            2
-        )
-
-        # Draw "R" in top right corner
-        right_center_x = width - (turn_point_radius + 10)
-        right_center_y = turn_point_radius + 10
-        right_point = (right_center_x, right_center_y)
-        
-        cv2.circle(output_image, right_point, turn_point_radius, (255, 255, 255), -1)
-        text_R = "R"
-        text_R_size, _ = cv2.getTextSize(text_R, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-        text_R_x = right_center_x - text_R_size[0] // 2
-        text_R_y = right_center_y + text_R_size[1] // 2
-        cv2.putText(
-            output_image,
-            text_R,
-            (text_R_x, text_R_y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 0, 0),
-            2
-        )
-
-        # Add left turn action (-1)
-        final_actions.append({
-            'action_number': -1,
-            'turning_degree': -90.0,
-            'center_position': (left_center_x, left_center_y),
-            'boundary_point': None
-        })
-
-        # Add right turn action (0)
-        final_actions.append({
-            'action_number': 0,
-            'turning_degree': 90.0,
-            'center_position': (right_center_x, right_center_y),
-            'boundary_point': None
-        })
-
     # Keep track of valid points and their details for final numbering and info generation
     valid_points_details = []
+    
+    # Calculate center angle (0 degrees is straight ahead)
+    center_x = width // 2
     
     # Iterate through the initially filtered boundary points
     for i, point in enumerate(boundary_points):
@@ -265,6 +156,15 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
         
         # Calculate turning degree
         turning_degree = calculate_turning_degree(point, start_point)
+        
+        # Calculate angle from center (in degrees)
+        angle_from_center = abs(turning_degree)
+        
+        # Adjust minimum path length based on angle
+        # Straight ahead (0 degrees) gets full length, 45 degrees gets 70% length
+        angle_factor = 1.0 - (angle_from_center / 45.0) * 0.3
+        angle_factor = max(0.7, min(1.0, angle_factor))  # Clamp between 0.7 and 1.0
+        adjusted_min_path_length = int(min_path_length * angle_factor)
         
         # Find where the ray from start_point to end_point intersects the bottom of the image
         if start_point[1] != end_point[1]:  # Avoid division by zero
@@ -304,20 +204,23 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
                 
                 path_valid = True
                 final_navigable_point = entry_point # Default to entry if no steps taken or path invalid
+                path_length = 0  # Track actual path length
 
                 # Limit the number of steps to prevent infinite loops in edge cases
-                max_steps = int(direction_length / step_size) + 2 
+                max_steps = int(direction_length / step_size) + 2
 
                 for _ in range(max_steps):
                     # Check if we're effectively at or past the end point
                     dist_sq_to_end = (current_x - end_point[0])**2 + (current_y - end_point[1])**2
                     if dist_sq_to_end < step_size**2:
                         final_navigable_point = end_point # Reached original end point while navigable
+                        path_length = direction_length
                         break
 
                     # Move one step in the direction
                     next_x = current_x + direction_x * step_size
                     next_y = current_y + direction_y * step_size
+                    path_length += step_size
 
                     # Round to get pixel coordinates for checking navigability
                     pixel_x = int(round(next_x))
@@ -367,17 +270,18 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
         # Recalculate path length based on the potentially adjusted end_point
         path_length = math.sqrt((end_point[0] - entry_point[0])**2 + (end_point[1] - entry_point[1])**2)
         
-        # Skip this path if it's too short
-        if path_length < min_path_length:
-            continue
-            
-        # Draw arrow to the (potentially adjusted) end point
+        # Determine if the path is blocked (shorter than adjusted minimum length)
+        is_blocked = path_length < adjusted_min_path_length
+        
+        # Draw arrow with appropriate color (green for navigable, red for blocked)
+        arrow_color = (255, 0, 0)  # Red in BGR format (B=0, G=0, R=255)
+        
         cv2.arrowedLine(
             output_image, 
             entry_point,
             end_point,
-            (255, 0, 0),  # Red color
-            2,  # Line thickness
+            arrow_color,  # Use red color
+            4,  # Line thickness
             tipLength=0.03
         )
         
@@ -389,22 +293,139 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
         valid_points_details.append({
             'mid_x': mid_x,
             'mid_y': mid_y,
-            'end_point': end_point,
-            'turning_degree': turning_degree
+            'end_point': end_point,  # Store end point for final action info
+            'turning_degree': turning_degree,
+            'path_length': path_length,
+            'is_blocked': is_blocked
         })
+    
+    # Initialize the final action list
+    final_actions = []
+    
+    if use_turn_around and not use_turn_left_right:
+        # Draw the "turn around" option (action 0) representation at top left corner
+        cv2.circle(output_image, turn_point, turn_point_radius, (255, 255, 255), -1)  # White background circle
 
+        # Center the "0" text within the circle
+        text_0 = "0"
+        text_0_size, _ = cv2.getTextSize(text_0, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+        text_0_x = turn_point_center_x - text_0_size[0] // 2
+        text_0_y = turn_point_center_y + text_0_size[1] // 2
+        cv2.putText(
+            output_image,
+            text_0,
+            (text_0_x, text_0_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 0), # Black text
+            2
+        )
+
+        # Add descriptive text next to the "0" circle
+        if draw_degree:
+            turn_around_text = "turn around (180deg)"
+        else:
+            turn_around_text = "turn around"
+
+        text_ta_x = turn_point_center_x + turn_point_radius + 5 # Position text to the right of the circle
+        text_ta_y = turn_point_center_y + text_0_size[1] // 2
+
+        cv2.putText(
+            output_image,
+            turn_around_text,
+            (text_ta_x, text_ta_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5, # Font scale
+            (255, 0, 0), # Red text color
+            2 # Thickness
+        )
+        
+        # Add "turn around" action first (always action 0)
+        final_actions.append({
+            'action_number': 0,
+            'turning_degree': 180.0,
+            'center_position': (turn_point_center_x, turn_point_center_y),
+            'boundary_point': None,  # No boundary point for turning around
+            'path_length': 0,
+            'is_blocked': False
+        })
+    elif use_turn_left_right:
+        # Draw "L" and "R" indicators at top corners
+        # Left corner "L"
+        l_text = "L"
+        l_text_size, _ = cv2.getTextSize(l_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+        l_x = turn_point_radius + 10
+        l_y = turn_point_radius + 10
+        
+        # Draw white circle for "L" with red boundary
+        cv2.circle(output_image, (l_x, l_y), number_size, (255, 255, 255), -1)  # White background circle
+        cv2.circle(output_image, (l_x, l_y), number_size, (255, 0, 0), 2)  # Red boundary
+        
+        # Center the "L" text within the circle
+        l_text_x = l_x - l_text_size[0] // 2
+        l_text_y = l_y + l_text_size[1] // 2
+        cv2.putText(
+            output_image,
+            l_text,
+            (l_text_x, l_text_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 0), # Black text
+            2
+        )
+        
+        # Right corner "R"
+        r_text = "R"
+        r_text_size, _ = cv2.getTextSize(r_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+        r_x = width - turn_point_radius - 10 - r_text_size[0]
+        r_y = turn_point_radius + 10
+        
+        # Draw white circle for "R" with red boundary
+        cv2.circle(output_image, (r_x, r_y), number_size, (255, 255, 255), -1)  # White background circle
+        cv2.circle(output_image, (r_x, r_y), number_size, (255, 0, 0), 2)  # Red boundary
+        
+        # Center the "R" text within the circle
+        r_text_x = r_x - r_text_size[0] // 2
+        r_text_y = r_y + r_text_size[1] // 2
+        cv2.putText(
+            output_image,
+            r_text,
+            (r_text_x, r_text_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 0), # Black text
+            2
+        )
+        
+        # Add turn left and right actions
+        final_actions.append({
+            'action_number': "L",
+            'turning_degree': -90.0,  # Left turn
+            'center_position': (l_x, l_y),
+            'boundary_point': None
+        })
+        final_actions.append({
+            'action_number': "R",
+            'turning_degree': 90.0,  # Right turn
+            'center_position': (r_x, r_y),
+            'boundary_point': None
+        })
+    
     # Draw numbers and turning degrees for valid paths and build final action list
-    for details in valid_points_details:
+    for i, details in enumerate(valid_points_details):
+        action_number = i + 1  # Start numbering from 1 for actual actions
         mid_x = details['mid_x']
         mid_y = details['mid_y']
         end_point = details['end_point']
         turning_degree = details['turning_degree']
+        path_length = details['path_length']
+        is_blocked = details['is_blocked']
         
         # Draw number in circle with white background
-        cv2.circle(output_image, (mid_x, mid_y), number_size, (255, 255, 255), -1)
+        cv2.circle(output_image, (mid_x, mid_y), number_size, (255, 255, 255), -1)  # White background
         
         # Adjust text position based on number of digits for better centering
-        text = str(action_number)  # Use the current action_number
+        text = str(action_number)
         text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
         text_x = mid_x - text_size[0] // 2
         text_y = mid_y + text_size[1] // 2
@@ -415,16 +436,17 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
             (text_x, text_y),
             cv2.FONT_HERSHEY_SIMPLEX, 
             0.5, 
-            (0, 0, 0),
+            (0, 0, 0),  # Black text
             2
         )
         
         # Add turning degree text if requested
         if draw_degree:
-             degree_text = f"{turning_degree:.0f}deg"
+             degree_text = f"{turning_degree:.0f}°"
+             # Position degree text below the number circle
              degree_text_size, _ = cv2.getTextSize(degree_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-             degree_text_x = mid_x - degree_text_size[0] // 2
-             degree_text_y = mid_y + number_size + 15
+             degree_text_x = mid_x - degree_text_size[0] // 2 # Center below circle
+             degree_text_y = mid_y + number_size + 15 # Below circle + padding
 
              cv2.putText(
                  output_image,
@@ -432,8 +454,8 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
                  (degree_text_x, degree_text_y),
                  cv2.FONT_HERSHEY_SIMPLEX,
                  0.5,
-                 (255, 0, 0),
-                 1
+                 (0, 0, 255) if is_blocked else (0, 255, 0),  # Red for blocked, green for navigable
+                 1 # Thinner line for degree text
              )
 
         # convert all numbers to int
@@ -445,11 +467,11 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
         final_actions.append({
             'action_number': action_number,
             'turning_degree': round(turning_degree, 1),
-            'center_position': (mid_x, mid_y),
-            'boundary_point': end_point
+            'center_position': (mid_x, mid_y),  # Add center position
+            'boundary_point': end_point,  # Add boundary point
+            'path_length': path_length,
+            'is_blocked': is_blocked
         })
-        print(f"Action {action_number}: {final_actions[-1]}")
-        action_number += 1
     
     # Return the image and the final list of actions
     return output_image, final_actions
