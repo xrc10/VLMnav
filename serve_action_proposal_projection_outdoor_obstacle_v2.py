@@ -242,7 +242,7 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
         is_blocked = path_length < adjusted_min_path_length
         
         # Draw arrow with appropriate color (red for blocked, green for clear)
-        arrow_color = (0, 0, 255) if is_blocked else (0, 255, 0)  # Red for blocked, Green for clear in BGR format
+        arrow_color = (255, 0, 0) if is_blocked else (0, 255, 0)  # Red for blocked, Green for clear in BGR format
         
         # Draw thicker arrow for blocked paths
         arrow_thickness = 6 if is_blocked else 4
@@ -286,7 +286,7 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
         obstacle_info = details['obstacle_info']
         
         # Draw number in circle with white background
-        circle_color = (0, 0, 255) if is_blocked else (0, 255, 0)  # Red for blocked, Green for clear
+        circle_color = (255, 0, 0) if is_blocked else (0, 255, 0)  # Red for blocked, Green for clear
         cv2.circle(output_image, (mid_x, mid_y), number_size, (255, 255, 255), -1)
         cv2.circle(output_image, (mid_x, mid_y), number_size, circle_color, 2)
         
@@ -334,7 +334,7 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
                     (blocked_text_x, blocked_text_y),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
-                    (0, 0, 255),  # Red color
+                    (255, 0, 0),  # Red color
                     1
                 )
                 
@@ -351,7 +351,7 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
                         (obstacle_text_x, obstacle_text_y),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.4,
-                        (0, 0, 255),  # Red color
+                        (255, 0, 0),  # Red color
                         1
                     )
 
