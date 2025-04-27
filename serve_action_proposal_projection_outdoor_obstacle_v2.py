@@ -238,15 +238,55 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
         # Recalculate path length based on the potentially adjusted end_point
         path_length = math.sqrt((end_point[0] - entry_point[0])**2 + (end_point[1] - entry_point[1])**2)
         
-        # Determine if the path is blocked (shorter than adjusted minimum length)
-        is_blocked = path_length < adjusted_min_path_length
+        # Store details for numbering and final action list
+        valid_points_details.append({
+            'mid_x': (entry_point[0] + end_point[0]) // 2,
+            'mid_y': (entry_point[1] + end_point[1]) // 2,
+            'end_point': end_point,
+            'entry_point': entry_point,
+            'turning_degree': turning_degree,
+            'path_length': path_length,
+            'is_blocked': path_length < adjusted_min_path_length,
+            'obstacle_info': obstacle_info
+        })
+
+    # Post-process to identify paths that are shorter than their neighbors
+    for i, details in enumerate(valid_points_details):
+        # Get neighboring path lengths
+        prev_length = valid_points_details[i-1]['path_length'] if i > 0 else details['path_length']
+        next_length = valid_points_details[i+1]['path_length'] if i < len(valid_points_details)-1 else details['path_length']
         
-        # Draw arrow with appropriate color (red for blocked, green for clear)
-        arrow_color = (255, 0, 0) if is_blocked else (0, 255, 0)  # Red for blocked, Green for clear in BGR format
+        # Mark paths that are significantly shorter than their neighbors (at least 30% shorter)
+        avg_neighbor_length = (prev_length + next_length) / 2
+        details['shorter_than_neighbors'] = (not details['is_blocked'] and 
+                                          details['path_length'] < 0.7 * avg_neighbor_length)
+
+    # Draw arrows and numbers
+    final_actions = []
+    for i, details in enumerate(valid_points_details):
+        action_number = i + 1
+        mid_x = details['mid_x']
+        mid_y = details['mid_y']
+        end_point = details['end_point']
+        entry_point = details['entry_point']
+        turning_degree = details['turning_degree']
+        path_length = details['path_length']
+        is_blocked = details['is_blocked']
+        shorter_than_neighbors = details.get('shorter_than_neighbors', False)
+        obstacle_info = details['obstacle_info']
         
-        # Draw thicker arrow for blocked paths
-        arrow_thickness = 6 if is_blocked else 4
+        # Determine arrow color based on status
+        if is_blocked:
+            arrow_color = (0, 0, 255)  # Red for blocked
+            arrow_thickness = 6
+        elif shorter_than_neighbors:
+            arrow_color = (0, 255, 255)  # Yellow for warning
+            arrow_thickness = 5
+        else:
+            arrow_color = (0, 255, 0)  # Green for clear
+            arrow_thickness = 4
         
+        # Draw arrow
         cv2.arrowedLine(
             output_image, 
             entry_point,
@@ -256,37 +296,8 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
             tipLength=0.03
         )
         
-        # Calculate position for the number (midpoint of visible arrow)
-        mid_x = (entry_point[0] + end_point[0]) // 2
-        mid_y = (entry_point[1] + end_point[1]) // 2
-        
-        # Store details for numbering and final action list
-        valid_points_details.append({
-            'mid_x': mid_x,
-            'mid_y': mid_y,
-            'end_point': end_point,
-            'turning_degree': turning_degree,
-            'path_length': path_length,
-            'is_blocked': is_blocked,
-            'obstacle_info': obstacle_info
-        })
-    
-    # Initialize the final action list
-    final_actions = []
-    
-    # Draw numbers and turning degrees for valid paths and build final action list
-    for i, details in enumerate(valid_points_details):
-        action_number = i + 1
-        mid_x = details['mid_x']
-        mid_y = details['mid_y']
-        end_point = details['end_point']
-        turning_degree = details['turning_degree']
-        path_length = details['path_length']
-        is_blocked = details['is_blocked']
-        obstacle_info = details['obstacle_info']
-        
-        # Draw number in circle with white background
-        circle_color = (255, 0, 0) if is_blocked else (0, 255, 0)  # Red for blocked, Green for clear
+        # Draw number circle
+        circle_color = arrow_color
         cv2.circle(output_image, (mid_x, mid_y), number_size, (255, 255, 255), -1)
         cv2.circle(output_image, (mid_x, mid_y), number_size, circle_color, 2)
         
@@ -321,25 +332,30 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
                 1
             )
 
-            # Add "BLOCKED" text for blocked paths
+            # Add status text
+            status_text = None
             if is_blocked:
-                blocked_text = "BLOCKED"
-                blocked_text_size, _ = cv2.getTextSize(blocked_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-                blocked_text_x = mid_x - blocked_text_size[0] // 2
-                blocked_text_y = mid_y + number_size + 35
+                status_text = "BLOCKED"
+            elif shorter_than_neighbors:
+                status_text = "WARNING"
+            
+            if status_text:
+                status_text_size, _ = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                status_text_x = mid_x - status_text_size[0] // 2
+                status_text_y = mid_y + number_size + 35
 
                 cv2.putText(
                     output_image,
-                    blocked_text,
-                    (blocked_text_x, blocked_text_y),
+                    status_text,
+                    (status_text_x, status_text_y),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
-                    (255, 0, 0),  # Red color
+                    circle_color,
                     1
                 )
                 
-                # Add obstacle information if available
-                if obstacle_info['class_names']:
+                # Add obstacle information if available for blocked paths
+                if is_blocked and obstacle_info['class_names']:
                     obstacle_text = f"Obstacles: {', '.join(obstacle_info['class_names'])}"
                     obstacle_text_size, _ = cv2.getTextSize(obstacle_text, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
                     obstacle_text_x = mid_x - obstacle_text_size[0] // 2
@@ -351,7 +367,7 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
                         (obstacle_text_x, obstacle_text_y),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.4,
-                        (255, 0, 0),  # Red color
+                        circle_color,
                         1
                     )
 
@@ -363,12 +379,55 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
             'boundary_point': (int(end_point[0]), int(end_point[1])),
             'path_length': int(path_length),
             'is_blocked': is_blocked,
+            'shorter_than_neighbors': shorter_than_neighbors,
             'obstacle_info': {
                 'class_ids': list(obstacle_info['class_ids']),
                 'class_names': list(obstacle_info['class_names']),
                 'blocking_point': obstacle_info['blocking_point']
             }
         })
+
+    # Add summary at the top of the image
+    summary_parts = []
+    
+    # Add blocked paths summary
+    blocked_actions = [action for action in final_actions if action['is_blocked']]
+    if blocked_actions:
+        blocked_summary = []
+        for action in blocked_actions:
+            obstacle_names = action['obstacle_info']['class_names']
+            if obstacle_names:
+                blocked_summary.append(f"#{action['action_number']}: {', '.join(obstacle_names)}")
+        if blocked_summary:
+            summary_parts.append("Blocked paths - " + "; ".join(blocked_summary))
+    
+    # Add warning paths summary
+    warning_actions = [action for action in final_actions if action['shorter_than_neighbors']]
+    if warning_actions:
+        warning_summary = [f"#{action['action_number']}" for action in warning_actions]
+        if warning_summary:
+            summary_parts.append("Warning: shorter paths - " + ", ".join(warning_summary))
+    
+    # Draw summary text if there are any warnings or blocked paths
+    if summary_parts:
+        summary_text = " | ".join(summary_parts)
+        # Add semi-transparent background for better text visibility
+        text_size, _ = cv2.getTextSize(summary_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+        bg_height = text_size[1] + 20
+        bg = output_image[0:bg_height, 0:width].copy()
+        overlay = np.zeros_like(bg)
+        cv2.rectangle(overlay, (0, 0), (width, bg_height), (255, 255, 255), -1)
+        output_image[0:bg_height, 0:width] = cv2.addWeighted(bg, 0.2, overlay, 0.8, 0)
+        
+        cv2.putText(
+            output_image,
+            summary_text,
+            (10, 30),  # Position the text near the top
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,  # Font scale
+            (0, 0, 0),  # Black color
+            2  # Thickness
+        )
     
     return output_image, final_actions
 
