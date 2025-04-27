@@ -95,6 +95,8 @@ def test_action_proposal_api(
                 "number_size": number_size,
                 "min_path_length": min_path_length,
                 "min_arrow_width": min_arrow_width,
+                "use_turn_left_right": use_turn_left_right,
+                "use_turn_around": use_turn_around
             }
             
             # Send request to API
@@ -173,8 +175,7 @@ if __name__ == "__main__":
             number_size=NUMBER_SIZE,
             min_path_length=MIN_PATH_LENGTH,
             min_arrow_width=MIN_ARROW_WIDTH,
-            use_turn_left_right=False,
-            use_turn_around=False
+            use_turn_left_right=True
         ) 
         end_time = time.time()
         print(f"Time taken: {end_time - start_time} seconds")

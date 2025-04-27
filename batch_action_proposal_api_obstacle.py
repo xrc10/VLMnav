@@ -41,7 +41,11 @@ def test_action_proposal_api(
     number_size=30,
     min_path_length=200,
     min_arrow_width=15,
-    use_turn_left_right=False
+    use_turn_left_right=False,
+    normal_fps=2.0,  # Normal frame rate
+    fast_fps=4.0,   # Fast frame rate when no blocked/short paths
+    slow_fps=1.0,   # Slow frame rate when blocked/short paths present
+    consecutive_frames_for_speedup=5  # Number of consecutive frames without blocked/short paths to speed up
 ):
     """
     Test the action proposal API by sending local images and saving the results.
@@ -55,6 +59,10 @@ def test_action_proposal_api(
         min_path_length: Minimum path length for proposals
         min_arrow_width: Minimum arrow width for proposals
         use_turn_left_right: Whether to use turn left right for proposals
+        normal_fps: Normal frame rate
+        fast_fps: Fast frame rate when no blocked/short paths
+        slow_fps: Slow frame rate when blocked/short paths present
+        consecutive_frames_for_speedup: Number of consecutive frames without blocked/short paths to speed up
     """
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -72,7 +80,13 @@ def test_action_proposal_api(
     height, width = first_image.shape[:2]
     video_path = os.path.join(output_dir, "output_video.mp4")
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(video_path, fourcc, 2.0, (width, height))
+    
+    # Initialize video writer with normal frame rate
+    video_writer = cv2.VideoWriter(video_path, fourcc, normal_fps, (width, height))
+    
+    # Track consecutive frames without blocked/short paths
+    consecutive_normal_frames = 0
+    current_fps = normal_fps
     
     for image_path in tqdm(image_files):
         # Get filename without path
@@ -136,6 +150,27 @@ def test_action_proposal_api(
 
                 print(f"  Actions: {actions}")
                 
+                # Check if there are any blocked or significantly shorter paths
+                has_blocked_or_short = any(action.get('is_blocked', False) or 
+                                         action.get('is_significantly_shorter', False) 
+                                         for action in actions)
+                
+                # Update consecutive frames counter and adjust frame rate
+                if has_blocked_or_short:
+                    consecutive_normal_frames = 0
+                    if current_fps != slow_fps:
+                        current_fps = slow_fps
+                        # Recreate video writer with new frame rate
+                        video_writer.release()
+                        video_writer = cv2.VideoWriter(video_path, fourcc, current_fps, (width, height))
+                else:
+                    consecutive_normal_frames += 1
+                    if consecutive_normal_frames >= consecutive_frames_for_speedup and current_fps != fast_fps:
+                        current_fps = fast_fps
+                        # Recreate video writer with new frame rate
+                        video_writer.release()
+                        video_writer = cv2.VideoWriter(video_path, fourcc, current_fps, (width, height))
+                
                 # Add frame to video
                 frame = cv2.imread(output_image_path)
                 video_writer.write(frame)
@@ -161,6 +196,10 @@ if __name__ == "__main__":
     NUMBER_SIZE = 20
     MIN_PATH_LENGTH = 80
     MIN_ARROW_WIDTH = 5
+    NORMAL_FPS = 2.0
+    FAST_FPS = 4.0
+    SLOW_FPS = 1.0
+    CONSECUTIVE_FRAMES_FOR_SPEEDUP = 5
 
     # clean output folder
     if os.path.exists(OUTPUT_DIR):
@@ -177,7 +216,11 @@ if __name__ == "__main__":
         number_size=NUMBER_SIZE,
         min_path_length=MIN_PATH_LENGTH,
         min_arrow_width=MIN_ARROW_WIDTH,
-        use_turn_left_right=True
+        use_turn_left_right=True,
+        normal_fps=NORMAL_FPS,
+        fast_fps=FAST_FPS,
+        slow_fps=SLOW_FPS,
+        consecutive_frames_for_speedup=CONSECUTIVE_FRAMES_FOR_SPEEDUP
     ) 
     end_time = time.time()
     print(f"Total time taken: {end_time - start_time} seconds")

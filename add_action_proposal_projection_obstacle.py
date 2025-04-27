@@ -150,7 +150,8 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
     # Calculate center angle (0 degrees is straight ahead)
     center_x = width // 2
     
-    # Iterate through the initially filtered boundary points
+    # First pass: collect all path lengths
+    path_lengths = []
     for i, point in enumerate(boundary_points):
         end_point = (point[1], point[0])  # Convert from (row, col) to (x, y)
         
@@ -168,10 +169,8 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
         
         # Find where the ray from start_point to end_point intersects the bottom of the image
         if start_point[1] != end_point[1]:  # Avoid division by zero
-            # Ensure end_point[1] - start_point[1] is not zero to avoid division error
-            # This check is technically redundant due to the outer if, but safer explicit check
             denominator = end_point[1] - start_point[1]
-            if denominator == 0: continue # Should not happen due to outer if
+            if denominator == 0: continue
             
             t = (height - 1 - start_point[1]) / denominator
             entry_x = int(start_point[0] + t * (end_point[0] - start_point[0]))
@@ -199,52 +198,43 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
                 
                 # Start from entry point and move along the direction
                 # until we hit a non-navigable pixel or reach the end point
-                current_x, current_y = float(entry_point[0]), float(entry_point[1]) # Use float for accumulation
-                step_size = 1.0  # Step size for traversing the line
+                current_x, current_y = float(entry_point[0]), float(entry_point[1])
+                step_size = 1.0
                 
                 path_valid = True
-                final_navigable_point = entry_point # Default to entry if no steps taken or path invalid
-                path_length = 0  # Track actual path length
+                final_navigable_point = entry_point
+                path_length = 0
 
-                # Limit the number of steps to prevent infinite loops in edge cases
                 max_steps = int(direction_length / step_size) + 2
 
                 for _ in range(max_steps):
-                    # Check if we're effectively at or past the end point
                     dist_sq_to_end = (current_x - end_point[0])**2 + (current_y - end_point[1])**2
                     if dist_sq_to_end < step_size**2:
-                        final_navigable_point = end_point # Reached original end point while navigable
+                        final_navigable_point = end_point
                         path_length = direction_length
                         break
 
-                    # Move one step in the direction
                     next_x = current_x + direction_x * step_size
                     next_y = current_y + direction_y * step_size
                     path_length += step_size
 
-                    # Round to get pixel coordinates for checking navigability
                     pixel_x = int(round(next_x))
                     pixel_y = int(round(next_y))
 
-                    # Check boundaries
                     if (pixel_y < 0 or pixel_y >= height or
                         pixel_x < 0 or pixel_x >= width):
                         final_navigable_point = (int(round(current_x)), int(round(current_y)))
-                        break # Went out of bounds
+                        break
 
-                    # Check if we've hit a non-navigable pixel or are too close to one
-                    # Create a circular region around the current point to check for non-navigable pixels
                     is_valid = True
                     for dx in range(-min_arrow_width, min_arrow_width + 1):
                         for dy in range(-min_arrow_width, min_arrow_width + 1):
-                            # Skip points outside the circle
                             if dx*dx + dy*dy > min_arrow_width*min_arrow_width:
                                 continue
                                 
                             check_x = pixel_x + dx
                             check_y = pixel_y + dy
                             
-                            # Skip points outside image bounds
                             if (check_x < 0 or check_x >= width or
                                 check_y < 0 or check_y >= height):
                                 continue
@@ -256,40 +246,26 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
                             break
 
                     if not is_valid:
-                        final_navigable_point = (int(round(current_x)), int(round(current_y))) # Use the last valid point
-                        break # Hit non-navigable area or too close to one
+                        final_navigable_point = (int(round(current_x)), int(round(current_y)))
+                        break
 
-                    # Update current position if still navigable and within bounds
                     current_x, current_y = next_x, next_y
                 else:
-                    # Loop finished without break, means we reached max_steps close to end_point
                     final_navigable_point = (int(round(current_x)), int(round(current_y)))
 
-                end_point = final_navigable_point # Update end_point to the last valid navigable point found
+                end_point = final_navigable_point
         
         # Recalculate path length based on the potentially adjusted end_point
         path_length = math.sqrt((end_point[0] - entry_point[0])**2 + (end_point[1] - entry_point[1])**2)
         
-        # Determine if the path is blocked (shorter than adjusted minimum length)
+        # First determine if path is blocked (shorter than adjusted minimum length)
         is_blocked = path_length < adjusted_min_path_length
         
-        # Skip this path if it's too short and raise a warning
+        # Skip this path if it's blocked and raise a warning
         if is_blocked:
             print(f"Warning: Action proposal at angle {turning_degree:.1f}° is blocked (length: {path_length:.1f} < {adjusted_min_path_length:.1f})")
             continue
             
-        # Draw arrow with appropriate color (green for navigable, red for blocked)
-        arrow_color = (0, 255, 0) if not is_blocked else (0, 0, 255)  # Green for navigable, red for blocked
-        
-        cv2.arrowedLine(
-            output_image, 
-            entry_point,
-            end_point,
-            arrow_color,  # Use color based on navigability
-            2,  # Line thickness
-            tipLength=0.03
-        )
-        
         # Calculate position for the number (midpoint of visible arrow)
         mid_x = (entry_point[0] + end_point[0]) // 2
         mid_y = (entry_point[1] + end_point[1]) // 2
@@ -298,11 +274,45 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
         valid_points_details.append({
             'mid_x': mid_x,
             'mid_y': mid_y,
-            'end_point': end_point,  # Store end point for final action info
+            'end_point': end_point,
             'turning_degree': turning_degree,
             'path_length': path_length,
-            'is_blocked': is_blocked
+            'is_blocked': is_blocked,
+            'entry_point': entry_point,
+            'adjusted_min_path_length': adjusted_min_path_length  # Store for later comparison
         })
+    
+    # Second pass: analyze path lengths and draw arrows
+    for i, details in enumerate(valid_points_details):
+        # Get neighboring path lengths (2 neighbors on each side)
+        neighbor_indices = [j for j in range(max(0, i-2), min(len(valid_points_details), i+3)) if j != i]
+        
+        # Calculate average neighbor length if we have neighbors
+        is_significantly_shorter = False
+        if neighbor_indices:
+            avg_neighbor_length = sum(valid_points_details[j]['path_length'] for j in neighbor_indices) / len(neighbor_indices)
+            # Path is significantly shorter if it's less than 70% of average neighbor length
+            # But only mark as significantly shorter if it's not blocked
+            is_significantly_shorter = (not details['is_blocked'] and 
+                                     details['path_length'] < avg_neighbor_length * 0.7)
+            
+            if is_significantly_shorter:
+                print(f"Warning: Action proposal at angle {details['turning_degree']:.1f}° is significantly shorter than its neighbors (length: {details['path_length']:.1f} vs avg: {avg_neighbor_length:.1f})")
+                arrow_color = (255, 165, 0)  # Orange in BGR format for significantly shorter paths
+            else:
+                arrow_color = (0, 255, 0)  # Green in BGR format for normal paths
+        else:
+            arrow_color = (0, 255, 0)  # Green for paths without neighbors to compare
+        
+        # Draw arrow
+        cv2.arrowedLine(
+            output_image, 
+            details['entry_point'],
+            details['end_point'],
+            arrow_color,
+            2,
+            tipLength=0.03
+        )
     
     # Initialize the final action list
     final_actions = []
@@ -350,7 +360,7 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
             'action_number': 0,
             'turning_degree': 180.0,
             'center_position': (turn_point_center_x, turn_point_center_y),
-            'boundary_point': None,  # No boundary point for turning around
+            'boundary_point': None,
             'path_length': 0,
             'is_blocked': False
         })
@@ -418,13 +428,20 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
     
     # Draw numbers and turning degrees for valid paths and build final action list
     for i, details in enumerate(valid_points_details):
-        action_number = i + 1  # Start numbering from 1 for actual actions
+        action_number = i + 1
         mid_x = details['mid_x']
         mid_y = details['mid_y']
         end_point = details['end_point']
         turning_degree = details['turning_degree']
         path_length = details['path_length']
         is_blocked = details['is_blocked']
+        
+        # Get neighboring path lengths
+        neighbor_indices = [j for j in range(max(0, i-2), min(len(valid_points_details), i+3)) if j != i]
+        is_significantly_shorter = False
+        if neighbor_indices:
+            avg_neighbor_length = sum(valid_points_details[j]['path_length'] for j in neighbor_indices) / len(neighbor_indices)
+            is_significantly_shorter = path_length < avg_neighbor_length * 0.7
         
         # Draw number in circle with white background
         cv2.circle(output_image, (mid_x, mid_y), number_size, (255, 255, 255), -1)  # White background
@@ -453,13 +470,21 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
              degree_text_x = mid_x - degree_text_size[0] // 2 # Center below circle
              degree_text_y = mid_y + number_size + 15 # Below circle + padding
 
+             # Determine text color based on path status
+             if details['is_blocked']:
+                 text_color = (0, 0, 255)  # Red for blocked paths
+             elif is_significantly_shorter:
+                 text_color = (255, 165, 0)  # Orange for significantly shorter paths
+             else:
+                 text_color = (0, 255, 0)  # Green for normal paths
+
              cv2.putText(
                  output_image,
                  degree_text,
                  (degree_text_x, degree_text_y),
                  cv2.FONT_HERSHEY_SIMPLEX,
                  0.5,
-                 (255, 0, 0) if is_blocked else (0, 255, 0),  # Red for blocked, green for navigable
+                 text_color,
                  1 # Thinner line for degree text
              )
 
@@ -472,10 +497,11 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
         final_actions.append({
             'action_number': action_number,
             'turning_degree': round(turning_degree, 1),
-            'center_position': (mid_x, mid_y),  # Add center position
-            'boundary_point': end_point,  # Add boundary point
+            'center_position': (mid_x, mid_y),
+            'boundary_point': end_point,
             'path_length': path_length,
-            'is_blocked': is_blocked
+            'is_blocked': is_blocked,
+            'is_significantly_shorter': is_significantly_shorter
         })
     
     # Return the image and the final list of actions

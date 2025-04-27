@@ -302,7 +302,7 @@ def draw_action_proposals(image, boundary_points, start_point, number_size=15, n
     # Initialize the final action list
     final_actions = []
     
-    if use_turn_around:
+    if use_turn_around and not use_turn_left_right:
         # Draw the "turn around" option (action 0) representation at top left corner
         cv2.circle(output_image, turn_point, turn_point_radius, (255, 255, 255), -1)  # White background circle
 

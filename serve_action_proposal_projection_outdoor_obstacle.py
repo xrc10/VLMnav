@@ -3,6 +3,7 @@ import io
 import os
 import json
 import datetime
+import math
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_limiter import Limiter
@@ -143,6 +144,9 @@ def generate_action_proposals_from_image(image_data, min_angle=15, number_size=1
                         obstacle_label = id2label.get(obstacle_label_id, "unknown")
                         obstacle_position = (x, y)
                         
+                        # Calculate actual path length to obstacle
+                        path_length = math.sqrt((x - start_point[0])**2 + (y - start_point[1])**2)
+                        
                         # Add to obstacle info
                         obstacle_info.append({
                             'angle': angle,
@@ -150,41 +154,56 @@ def generate_action_proposals_from_image(image_data, min_angle=15, number_size=1
                             'position': obstacle_position
                         })
                         
-                        # Add blocked action
-                        blocked_actions.append({
-                            'turning_degree': angle,
-                            'is_blocked': True,
-                            'blocked_by': obstacle_label,
-                            'position': obstacle_position,
-                            'path_length': int(t * width)  # Approximate path length to obstacle
-                        })
+                        # Add blocked action if path length is less than minimum
+                        if path_length < min_path_length:
+                            blocked_actions.append({
+                                'turning_degree': angle,
+                                'is_blocked': True,
+                                'blocked_by': obstacle_label,
+                                'position': obstacle_position,
+                                'path_length': int(path_length)
+                            })
+                            
+                            # Draw blocked path in red
+                            cv2.line(output_image, start_point, obstacle_position, (255, 0, 0), 2)
+                            cv2.circle(output_image, obstacle_position, 10, (255, 0, 0), 2)
+                            cv2.putText(output_image, obstacle_label, 
+                                      (obstacle_position[0] + 15, obstacle_position[1]), 
+                                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
                         
                         obstacle_found = True
                         break
             
             if not obstacle_found:
-                # If no obstacle found but still no action, add a blocked action with unknown obstacle
-                blocked_actions.append({
-                    'turning_degree': angle,
-                    'is_blocked': True,
-                    'blocked_by': "unknown",
-                    'position': None,
-                    'path_length': width  # Use full width as path length
-                })
+                # If no obstacle found but still no action, check if path is too short
+                path_length = math.sqrt((end_x - start_point[0])**2 + (end_y - start_point[1])**2)
+                if path_length < min_path_length:
+                    blocked_actions.append({
+                        'turning_degree': angle,
+                        'is_blocked': True,
+                        'blocked_by': "unknown",
+                        'position': None,
+                        'path_length': int(path_length)
+                    })
             
-            # Draw blocked path in red
-            if obstacle_position:
-                # Draw the path from start point to obstacle
-                cv2.line(output_image, start_point, obstacle_position, (255, 0, 0), 2)
-                # Draw a red circle around the obstacle
-                cv2.circle(output_image, obstacle_position, 10, (255, 0, 0), 2)
-                # Add obstacle label
-                cv2.putText(output_image, obstacle_label, 
-                           (obstacle_position[0] + 15, obstacle_position[1]), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-            else:
-                # If no specific obstacle found, draw the path to the edge of the image
-                cv2.line(output_image, start_point, (end_x, end_y), (255, 0, 0), 2)
+            # Also check if the current angle has a valid action proposal
+            has_valid_action = False
+            for action in action_info:
+                if abs(action['turning_degree'] - angle) < min_angle/2:
+                    has_valid_action = True
+                    break
+            
+            if not has_valid_action and not obstacle_found:
+                # If no valid action and no obstacle found, check if path is too short
+                path_length = math.sqrt((end_x - start_point[0])**2 + (end_y - start_point[1])**2)
+                if path_length < min_path_length:
+                    blocked_actions.append({
+                        'turning_degree': angle,
+                        'is_blocked': True,
+                        'blocked_by': "unknown",
+                        'position': None,
+                        'path_length': int(path_length)
+                    })
     
     # Combine regular actions and blocked actions
     all_actions = action_info + blocked_actions

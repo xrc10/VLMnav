@@ -149,7 +149,7 @@ if __name__ == "__main__":
     # IMAGE_PATTERN = "/data3/xu_ruochen/vlm_od_logs/*.jpg"
     # IMAGE_PATTERN = "./ut_dog_depth_camera_rgb*.jpg"
     # IMAGE_PATTERN = "./ZED3_KSC_047355_L_P009301_png.rf.3557e43e49c61b09fdf2c479938de37e.jpg"
-    IMAGE_PATTERN = "./ZED3_KSC_047510_L_P009418_png.rf.30e99c2376bc8709863c1556be68e61c.jpg"
+    IMAGE_PATTERN = "./ZE*.jpg"
     OUTPUT_DIR = "./output/"
     MIN_ANGLE = 20
     NUMBER_SIZE = 20
@@ -178,4 +178,4 @@ if __name__ == "__main__":
         ) 
         end_time = time.time()
         print(f"Time taken: {end_time - start_time} seconds")
-        break
+        # break
