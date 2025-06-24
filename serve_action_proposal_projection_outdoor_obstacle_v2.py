@@ -437,7 +437,7 @@ def generate_action_proposals_from_image(image_data, min_angle=15, number_size=1
     
     # Get class ids for navigable regions
     id2label = model.config.id2label
-    outdoor_labels = ["floor", "rug", "road", "sidewalk", "earth", "field", "sand", "dirt track", "land", "path"]
+    outdoor_labels = ["floor", "rug", "road", "sidewalk", "earth", "field", "sand", "dirt track", "land", "path", "runway"]
     navigability_class_ids = [id for id, label in id2label.items() 
                             if label in outdoor_labels]
     
@@ -556,7 +556,7 @@ if __name__ == "__main__":
         'SEGMENTATION_MODEL_PATH', 
         "/data3/xu_ruochen/my_checkpoints/mask2former-swin-small-ade-semantic"
     )
-    port = int(os.environ.get('PORT', 8075))
+    port = int(os.environ.get('PORT', 8077))
     
     # Load model at startup
     print(f"Loading segmentation model from {model_path}...")
